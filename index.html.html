@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Secret Chat</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #121212;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      background: #1e1e2f;
+      text-align: center;
+      padding: 1rem;
+      font-size: 1.5rem;
+      font-weight: bold;
+      border-bottom: 1px solid #333;
+    }
+    main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    .sidebar, .profile, .chatbox {
+      padding: 1rem;
+      overflow-y: auto;
+    }
+    .sidebar {
+      width: 20%;
+      background: #1E1E2F;
+      border-right: 1px solid #333;
+    }
+    .chatbox {
+      width: 60%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .profile {
+      width: 20%;
+      background: #1E1E2F;
+      border-left: 1px solid #333;
+    }
+    .message-area {
+      flex-grow: 1;
+      overflow-y: auto;
+      padding: 1rem;
+    }
+    .message {
+      margin-bottom: 1rem;
+      max-width: 70%;
+      padding: 0.5rem 1rem;
+      border-radius: 1rem;
+    }
+    .sent {
+      background-color: #9b59b6;
+      align-self: flex-end;
+    }
+    .received {
+      background-color: #f39c12;
+      align-self: flex-start;
+    }
+    .input-box {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      padding: 1rem;
+      background: #222;
+    }
+    .input-box input, .input-box button {
+      padding: 0.5rem;
+      border-radius: 1rem;
+      border: none;
+    }
+    .input-box input {
+      flex-grow: 1;
+    }
+    .input-box button {
+      background-color: #27ae60;
+      color: white;
+      cursor: pointer;
+    }
+    .contacts-list div {
+      margin-bottom: 1rem;
+      background: #2c3e50;
+      padding: 0.5rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+    }
+    #callScreen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background-color: rgba(0, 0, 0, 0.9);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      z-index: 10;
+      animation: fadeIn 0.5s ease-in-out;
+    }
+    #callScreen video {
+      border-radius: 1rem;
+      flex: 1 1 calc(50% - 1rem);
+      max-width: 45%;
+    }
+    #endCallBtn {
+      position: absolute;
+      bottom: 2rem;
+      background-color: #e74c3c;
+      border: none;
+      padding: 0.8rem 1.2rem;
+      border-radius: 2rem;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <header>Secret Chat</header>
+  <main>
+    <div class="sidebar">
+      <h3>Contacts</h3>
+      <div class="contacts-list" id="contacts"></div>
+      <input type="text" id="searchId" placeholder="Paste ID here" />
+      <button onclick="connectToPeer()">Connect</button>
+    </div>
+    <div class="chatbox">
+      <div class="message-area" id="messages"></div>
+      <div class="input-box">
+        <input type="text" id="messageInput" placeholder="Type a message..." onkeypress="if(event.key === 'Enter') sendMessage();" />
+        <button onclick="sendMessage()">Send</button>
+        <input type="file" id="fileInput" />
+        <button onclick="sendFile()">Send File</button>
+        <button onclick="startCall()">Call</button>
+      </div>
+    </div>
+    <div class="profile">
+      <h3>Your ID</h3>
+      <div id="myId"></div>
+      <button onclick="copyMyId()">Copy ID</button>
+    </div>
+  </main>
+
+  <div id="callScreen">
+    <video id="localVideo" autoplay muted></video>
+    <video id="remoteVideo" autoplay></video>
+    <button id="endCallBtn" onclick="endCall()">End Call</button>
+  </div>
+
+  <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+  <script>
+    let peer = new Peer();
+    let conn;
+    let mediaConn;
+    let connections = [];
+
+    peer.on('open', function(id) {
+      document.getElementById('myId').innerText = id;
+    });
+
+    peer.on('connection', function(c) {
+      conn = c;
+      setupConnection(c);
+    });
+
+    peer.on('call', function(call) {
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then(stream => {
+          document.getElementById('localVideo').srcObject = stream;
+          call.answer(stream);
+          mediaConn = call;
+          showCallScreen();
+          call.on('stream', remoteStream => {
+            document.getElementById('remoteVideo').srcObject = remoteStream;
+          });
+        });
+    });
+
+    function connectToPeer() {
+      let peerId = document.getElementById('searchId').value;
+      conn = peer.connect(peerId);
+      setupConnection(conn);
+    }
+
+    function setupConnection(connection) {
+      connection.on('open', function() {
+        if (!connections.includes(connection.peer)) {
+          connections.push(connection.peer);
+          let contact = document.createElement('div');
+          contact.textContent = connection.peer;
+          contact.onclick = () => { conn = connection; };
+          document.getElementById('contacts').appendChild(contact);
+        }
+      });
+      connection.on('data', function(data) {
+        if (data.fileName) {
+          let blob = new Blob([new Uint8Array(data.data)], { type: data.mime });
+          let a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = data.fileName;
+          a.textContent = `Download: ${data.fileName}`;
+          document.getElementById('messages').appendChild(a);
+        } else {
+          let msg = document.createElement('div');
+          msg.className = 'message received';
+          msg.textContent = data;
+          document.getElementById('messages').appendChild(msg);
+        }
+      });
+    }
+
+    function sendMessage() {
+      let message = document.getElementById('messageInput').value;
+      if (conn && conn.open && message.trim()) {
+        conn.send(message);
+        let msg = document.createElement('div');
+        msg.className = 'message sent';
+        msg.textContent = message;
+        document.getElementById('messages').appendChild(msg);
+        document.getElementById('messageInput').value = '';
+      }
+    }
+
+    function sendFile() {
+      const fileInput = document.getElementById('fileInput');
+      if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+        reader.onload = () => {
+          const data = {
+            fileName: file.name,
+            data: Array.from(new Uint8Array(reader.result)),
+            mime: file.type
+          };
+          conn.send(data);
+        };
+        reader.readAsArrayBuffer(file);
+      }
+    }
+
+    function startCall() {
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then(stream => {
+          document.getElementById('localVideo').srcObject = stream;
+          mediaConn = peer.call(conn.peer, stream);
+          showCallScreen();
+          mediaConn.on('stream', remoteStream => {
+            document.getElementById('remoteVideo').srcObject = remoteStream;
+          });
+        });
+    }
+
+    function endCall() {
+      if (mediaConn) {
+        mediaConn.close();
+        mediaConn = null;
+        document.getElementById('remoteVideo').srcObject = null;
+        document.getElementById('localVideo').srcObject.getTracks().forEach(track => track.stop());
+        document.getElementById('localVideo').srcObject = null;
+      }
+      document.getElementById('callScreen').style.display = 'none';
+    }
+
+    function showCallScreen() {
+      document.getElementById('callScreen').style.display = 'flex';
+    }
+
+    function copyMyId() {
+      const idText = document.getElementById('myId').innerText;
+      navigator.clipboard.writeText(idText).then(() => alert("ID Copied!"));
+    }
+  </script>
+</body>
+</html>
